@@ -1,0 +1,84 @@
+name: CI/CD — Travel Concierge
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Test & Lint ─────────────────────────────────────────────────────
+  test:
+    name: 🧪 Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check syntax (py compile)
+        run: |
+          python -m py_compile main.py
+          python -m py_compile agent.py
+          python -m py_compile flight_agent.py
+          python -m py_compile hotel_agent.py
+          python -m py_compile activities_agent.py
+          echo "✅ All files compiled successfully"
+
+      - name: Check imports resolve
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          python -c "from flight_agent import flight_agent; print('✅ FlightAgent OK')"
+          python -c "from hotel_agent import hotel_agent; print('✅ HotelAgent OK')"
+          python -c "from activities_agent import activities_agent; print('✅ ActivitiesAgent OK')"
+          python -c "from agent import root_agent; print('✅ RootAgent OK')"
+
+      - name: Verify static frontend exists
+        run: |
+          test -f static/index.html && echo "✅ Frontend found" || (echo "❌ static/index.html missing" && exit 1)
+
+  # ── Job 2: Deploy to Render (only on push to main) ────────────────────────
+  deploy:
+    name: 🚀 Deploy to Render
+    runs-on: ubuntu-latest
+    needs: test                  # only runs if test job passes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -s -o response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -d '{}' > http_code.txt
+
+          HTTP_CODE=$(cat http_code.txt)
+          echo "Render API response code: $HTTP_CODE"
+          cat response.json
+
+          if [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ Deploy triggered successfully!"
+          else
+            echo "❌ Deploy trigger failed with code $HTTP_CODE"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Deployment Triggered" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Render Dashboard:** https://dashboard.render.com" >> $GITHUB_STEP_SUMMARY
