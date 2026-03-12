@@ -1,5 +1,4 @@
-# ✈️ ARIA — Travel Concierge
-
+✈️ ARIA — Travel Concierge
 A full-service AI travel planning app built with **Google ADK**, **Gemini 3.1 Flash Lite**, and **FastAPI**.
 
 ## Architecture
